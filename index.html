@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Наші Захцянки ✨</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Nunito', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.9; }
+        }
+        .animate-pulse-slow { animation: pulse-slow 3s infinite ease-in-out; }
+    </style>
+</head>
+<body class="bg-[#fff5f7]">
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBrCRLCpuowPNO2Nm46CdEFw_9G8nPUSvM",
+            authDomain: "bazhanya-4e81e.firebaseapp.com",
+            projectId: "bazhanya-4e81e",
+            storageBucket: "bazhanya-4e81e.firebasestorage.app",
+            messagingSenderId: "506381419509",
+            appId: "1:506381419509:web:f2d6ea5e79aa580a0056bc",
+            measurementId: "G-KBVFK4PSQX"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = 'bazhanya-4e81e-web-app';
+
+        window.firebase = { db, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, auth, signInAnonymously, onAuthStateChanged, appId };
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        
+        // Іконки Lucide для React через CDN версію
+        const Icon = ({ name, className }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current) {
+                    lucide.createIcons({
+                        targets: [ref.current]
+                    });
+                }
+            }, [name]);
+            return <i data-lucide={name} className={className} ref={ref}></i>;
+        };
+
+        const PRIORITY_LEVELS = [
+            { id: 'low', label: 'Зелений (хочеться)', color: 'bg-green-100 text-green-700 border-green-200', dot: 'bg-green-500' },
+            { id: 'medium', label: 'Оранжевий (дуже хочу)', color: 'bg-orange-100 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
+            { id: 'high', label: 'Червоний (мрія!)', color: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500' },
+        ];
+
+        const STATUS_TYPES = { ACTIVE: 'active', COMPLETED: 'completed', CANCELLED: 'cancelled' };
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [wishes, setWishes] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [isFormOpen, setIsFormOpen] = useState(false);
+            const [filter, setFilter] = useState(STATUS_TYPES.ACTIVE);
+            const [isUploading, setIsUploading] = useState(false);
+            const fileInputRef = useRef(null);
+            const [newWish, setNewWish] = useState({ title: '', link: '', imageUrl: '', priority: 'low' });
+
+            useEffect(() => {
+                const checkFirebase = setInterval(() => {
+                    if (window.firebase) {
+                        clearInterval(checkFirebase);
+                        const { auth, signInAnonymously, onAuthStateChanged } = window.firebase;
+                        signInAnonymously(auth).catch(console.error);
+                        onAuthStateChanged(auth, setUser);
+                    }
+                }, 100);
+            }, []);
+
+            useEffect(() => {
+                if (!user || !window.firebase) return;
+                const { db, collection, onSnapshot, appId } = window.firebase;
+                const wishesRef = collection(db, 'artifacts', appId, 'public', 'data', 'wishes');
+                
+                return onSnapshot(wishesRef, (snapshot) => {
+                    const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setWishes(docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+                    setLoading(false);
+                }, () => setLoading(false));
+            }, [user]);
+
+            const handleFileChange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setIsUploading(true);
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        if (w > 800 || h > 800) {
+                            const ratio = Math.min(800/w, 800/h);
+                            w *= ratio; h *= ratio;
+                        }
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        setNewWish(prev => ({ ...prev, imageUrl: canvas.toDataURL('image/jpeg', 0.6) }));
+                        setIsUploading(false);
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleAddWish = async (e) => {
+                e.preventDefault();
+                if (!newWish.title || !user) return;
+                const { db, collection, addDoc, serverTimestamp, appId } = window.firebase;
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wishes'), {
+                    ...newWish, status: STATUS_TYPES.ACTIVE, userId: user.uid, createdAt: serverTimestamp()
+                });
+                setNewWish({ title: '', link: '', imageUrl: '', priority: 'low' });
+                setIsFormOpen(false);
+            };
+
+            const updateStatus = async (id, status) => {
+                const { db, doc, updateDoc, appId } = window.firebase;
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'wishes', id), { status });
+            };
+
+            const deleteWish = async (id) => {
+                if (!confirm("Видалити назавжди?")) return;
+                const { db, doc, deleteDoc, appId } = window.firebase;
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'wishes', id));
+            };
+
+            const filteredWishes = useMemo(() => wishes.filter(w => w.status === filter), [wishes, filter]);
+
+            return (
+                <div className="min-h-screen pb-24">
+                    {/* Header */}
+                    <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-pink-100 px-6 py-4">
+                        <div className="max-w-2xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-pink-500 p-2 rounded-2xl shadow-lg shadow-pink-200 animate-pulse-slow">
+                                    <Icon name="heart" className="w-6 h-6 text-white" />
+                                </div>
+                                <h1 className="text-xl font-extrabold text-slate-900">Наші Захцянки</h1>
+                            </div>
+                            <button onClick={() => setIsFormOpen(true)} className="bg-slate-900 text-white px-5 py-2.5 rounded-full flex items-center gap-2 hover:bg-slate-800 transition-all active:scale-95">
+                                <Icon name="plus" className="w-5 h-5" />
+                                <span>Нове</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    <main className="max-w-2xl mx-auto px-6 pt-8">
+                        {}
+                        <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2 no-scrollbar">
+                            <button onClick={() => setFilter(STATUS_TYPES.ACTIVE)} className={`px-6 py-2 rounded-full text-sm font-bold transition-all border-2 ${filter === STATUS_TYPES.ACTIVE ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-white text-slate-500 shadow-sm'}`}>
+                                Чекають ✨ {wishes.filter(w => w.status === STATUS_TYPES.ACTIVE).length}
+                            </button>
+                            <button onClick={() => setFilter(STATUS_TYPES.COMPLETED)} className={`px-6 py-2 rounded-full text-sm font-bold transition-all border-2 ${filter === STATUS_TYPES.COMPLETED ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-white text-slate-500 shadow-sm'}`}>
+                                Ми це зробили! ✅ {wishes.filter(w => w.status === STATUS_TYPES.COMPLETED).length}
+                            </button>
+                        </div>
+
+                        {/* List */}
+                        {loading ? (
+                            <div className="text-center py-20 text-pink-300 font-bold uppercase tracking-widest text-xs">Завантаження мрій...</div>
+                        ) : filteredWishes.length === 0 ? (
+                            <div className="text-center py-20 bg-white/40 rounded-[3rem] border-2 border-dashed border-pink-100 text-slate-400 italic">Тут поки нічого немає...</div>
+                        ) : (
+                            <div className="grid gap-6">
+                                {filteredWishes.map(wish => {
+                                    const p = PRIORITY_LEVELS.find(lvl => lvl.id === wish.priority) || PRIORITY_LEVELS[0];
+                                    return (
+                                        <div key={wish.id} className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-pink-50">
+                                            {wish.imageUrl && <img src={wish.imageUrl} className="w-full h-56 object-cover" />}
+                                            <div className="p-6">
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div>
+                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${p.color}`}>{p.label.split(' ')[0]}</span>
+                                                        <h3 className={`text-xl font-bold mt-2 ${wish.status === STATUS_TYPES.COMPLETED ? 'line-through text-slate-300' : 'text-slate-800'}`}>{wish.title}</h3>
+                                                    </div>
+                                                    {wish.link && <a href={wish.link} target="_blank" className="p-3 bg-pink-50 text-pink-500 rounded-2xl"><Icon name="external-link" className="w-5 h-5" /></a>}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {wish.status === STATUS_TYPES.ACTIVE ? (
+                                                        <>
+                                                            <button onClick={() => updateStatus(wish.id, STATUS_TYPES.COMPLETED)} className="flex-1 py-3 bg-green-500 text-white rounded-2xl font-bold text-xs">ЗРОБЛЕНО</button>
+                                                            <button onClick={() => updateStatus(wish.id, STATUS_TYPES.CANCELLED)} className="p-3 bg-slate-100 text-slate-500 rounded-2xl"><Icon name="x" className="w-5 h-5" /></button>
+                                                        </>
+                                                    ) : (
+                                                        <button onClick={() => updateStatus(wish.id, STATUS_TYPES.ACTIVE)} className="w-full py-3 bg-pink-100 text-pink-600 rounded-2xl font-bold text-xs">ПОВЕРНУТИ</button>
+                                                    )}
+                                                    <button onClick={() => deleteWish(wish.id)} className="p-3 text-slate-300 hover:text-rose-500"><Icon name="trash-2" className="w-5 h-5" /></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Modal */}
+                    {isFormOpen && (
+                        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                            <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+                                <div className="flex justify-between mb-6">
+                                    <h2 className="text-xl font-bold">Щось цікаве? ✨</h2>
+                                    <button onClick={() => setIsFormOpen(false)}><Icon name="x-circle" className="w-7 h-7 text-slate-300" /></button>
+                                </div>
+                                <form onSubmit={handleAddWish} className="space-y-4">
+                                    <input required placeholder="Назва бажання..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-pink-200" value={newWish.title} onChange={e => setNewWish({...newWish, title: e.target.value})} />
+                                    <div onClick={() => fileInputRef.current.click()} className="h-40 border-2 border-dashed border-pink-100 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer hover:bg-pink-50 transition-all overflow-hidden relative">
+                                        {isUploading ? <Icon name="loader-2" className="w-8 h-8 animate-spin text-pink-500" /> : newWish.imageUrl ? <img src={newWish.imageUrl} className="w-full h-full object-cover" /> : <><Icon name="camera" className="w-8 h-8 text-pink-300 mb-2" /><span className="text-xs font-bold text-pink-300">ОБРАТИ ФОТО</span></>}
+                                        <input type="file" hidden ref={fileInputRef} accept="image/*" onChange={handleFileChange} />
+                                    </div>
+                                    <input placeholder="Посилання (необов'язково)..." className="w-full p-4 bg-slate-50 rounded-2xl outline-none" value={newWish.link} onChange={e => setNewWish({...newWish, link: e.target.value})} />
+                                    <div className="flex gap-2">
+                                        {PRIORITY_LEVELS.map(p => (
+                                            <button key={p.id} type="button" onClick={() => setNewWish({...newWish, priority: p.id})} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${newWish.priority === p.id ? p.color + ' border-current' : 'bg-white text-slate-300 border-slate-50'}`}>
+                                                {p.label.split(' ')[0]}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button type="submit" disabled={isUploading || !newWish.title} className="w-full py-4 bg-pink-500 text-white rounded-3xl font-bold text-lg shadow-lg shadow-pink-100 disabled:opacity-50">ЗБЕРЕГТИ ✨</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
